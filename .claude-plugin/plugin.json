@@ -1,0 +1,56 @@
+{
+  "name": "jev-autopilot",
+  "version": "0.1.0",
+  "description": "Answers Claude's questions with TypeSafe Jev so autonomous loops don't stall; escalates big calls to Telegram and logs every decision",
+  "author": {
+    "name": "Hunter McDaniel",
+    "url": "https://github.com/hmcdaniel03"
+  },
+  "repository": "https://github.com/hmcdaniel03/jev-autopilot",
+  "license": "MIT",
+  "keywords": ["claude-code", "mod", "autopilot", "telegram", "typesafe", "jev", "firstmate"],
+  "userConfig": {
+    "ownerName": {
+      "type": "string",
+      "title": "Owner name",
+      "default": "the owner",
+      "description": "How prompts and Telegram text refer to you (e.g. your first name)"
+    },
+    "minConfidence": {
+      "type": "number",
+      "title": "Min confidence",
+      "default": 0.7,
+      "description": "Below this Jev confidence an auto-answer is flagged for review"
+    },
+    "stakesThreshold": {
+      "type": "number",
+      "title": "Stakes threshold",
+      "default": 0.5,
+      "description": "Jev's high-stakes score at or above which the question goes to Telegram"
+    },
+    "holdThreshold": {
+      "type": "number",
+      "title": "Hold threshold",
+      "default": 0.65,
+      "description": "Jev's probability a tool call is dangerous at or above which it is held for Telegram approval"
+    },
+    "telegramWaitMinutes": {
+      "type": "number",
+      "title": "Telegram wait (minutes)",
+      "default": 30,
+      "description": "How long a Proceed tap on a held call stays valid for that exact call in the session that held it"
+    },
+    "tempRoots": {
+      "type": "string",
+      "title": "Scratch roots",
+      "multiple": true,
+      "description": "Directories whose contents are throwaway, so deleting inside them is cleanup rather than destruction. Default: /tmp/, /private/tmp/, /var/folders/ (a root starting with ~/ also matches $HOME)"
+    },
+    "firstmateRemotes": {
+      "type": "string",
+      "title": "Extra Firstmate remotes or paths",
+      "multiple": true,
+      "description": "Besides github.com/kunchenguid/firstmate: a fork's remote URL, or the absolute path of a checkout, that counts as a genuine Firstmate home"
+    }
+  }
+}

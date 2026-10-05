@@ -1,0 +1,54 @@
+# CI for the public jev-autopilot repository (this file is a no-op while the plugin
+# lives in a subfolder of another repo; GitHub only runs workflows from the root).
+#
+# validate + test need no account: `claude plugin test` runs the tests in a child of
+# the Claude Code binary with no session, sign-in or network. The type check needs the
+# engine's generated declarations, which Claude Code writes only when it loads the mod,
+# so that job runs when an ANTHROPIC_API_KEY secret is configured for the repo.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Claude Code
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: claude --version
+      - name: Validate the plugin manifest and hooks (warnings are errors)
+        run: claude plugin validate --strict .
+      - name: Validate the marketplace manifest
+        run: claude plugin validate --strict .claude-plugin/marketplace.json
+      - name: Run the tests
+        run: claude plugin test .
+
+  typecheck:
+    runs-on: ubuntu-latest
+    if: ${{ vars.TYPECHECK == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Claude Code
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Generate the engine's type declarations by loading the mod once
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: claude --plugin-dir . --max-turns 1 -p 'Reply with the single word ok.' || true
+      - name: Type-check hooks and tests
+        run: |
+          test -f .claude-plugin/types/tsconfig.json || { echo 'types were not generated; is ANTHROPIC_API_KEY set?'; exit 1; }
+          npx -y -p typescript@5 tsc --noEmit -p .

@@ -1,0 +1,28 @@
+{
+  "name": "jev-autopilot",
+  "owner": {
+    "name": "Hunter McDaniel",
+    "url": "https://github.com/hmcdaniel03"
+  },
+  "metadata": {
+    "description": "jev-autopilot: TypeSafe Jev answers Claude's questions and screens tool calls; the rest goes to your phone over Telegram",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "jev-autopilot",
+      "source": "./",
+      "description": "Answers Claude's questions with TypeSafe Jev so autonomous loops don't stall; escalates big calls to Telegram and logs every decision",
+      "version": "0.1.0",
+      "author": {
+        "name": "Hunter McDaniel",
+        "url": "https://github.com/hmcdaniel03"
+      },
+      "homepage": "https://github.com/hmcdaniel03/jev-autopilot",
+      "repository": "https://github.com/hmcdaniel03/jev-autopilot",
+      "license": "MIT",
+      "keywords": ["claude-code", "mod", "autopilot", "telegram", "typesafe", "jev", "firstmate"],
+      "category": "productivity"
+    }
+  ]
+}
