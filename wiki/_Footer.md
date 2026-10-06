@@ -1,0 +1,1 @@
+jev-autopilot is MIT-licensed and independent of TypeSafe AI and of Firstmate. These pages are generated from the `wiki/` folder of the [repository](https://github.com/hmcdaniel03/jev-autopilot): edit them there in a pull request rather than here, so the docs are reviewed with the code (see [[Development and Contributing]]).

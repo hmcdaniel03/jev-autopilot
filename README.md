@@ -20,6 +20,11 @@ works with.
 > turning it on, and keep Claude Code's own permission mode as a second line of
 > defence rather than running with permissions bypassed.
 
+The full documentation is in the [wiki](https://github.com/hmcdaniel03/jev-autopilot/wiki):
+how decisions are made, every command and option, the safety model, what leaves
+the machine, the Firstmate integration and a troubleshooting FAQ. This README is
+the short version.
+
 ## Quick start
 
 ```sh
@@ -252,6 +257,9 @@ generates it without signing in, which is what CI does. `hooks/core.ts` and
 `hooks/trust.ts` hold the pure logic and are unit-tested; `hooks/register.ts` wires
 them to the engine and is covered by harness tests in `tests/register.test.ts`;
 `hooks/setup.ts` is the `/autopilot setup` state machine and its printed text.
+
+The wiki's sources are in `wiki/`; edit them with the code and publish with
+`scripts/publish-wiki.sh` (see the wiki's Development page).
 
 ## License
 
