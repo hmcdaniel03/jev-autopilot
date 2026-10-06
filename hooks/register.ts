@@ -13,6 +13,10 @@ import {
   detectFirstmate, modeIsPrivate, newPairCode, parseEnvFile, redact, scriptsClean, showPairCode, tryPair, SECRETS_FILE, PAIR_ATTEMPTS,
 } from './trust'
 import type { FmProbe, PairCode } from './trust'
+import {
+  createFileCommand, JEV_MODELS_URL, nextStep, SECRETS_TEMPLATE, secretsFile, stepText, summaryLines, windowsRestrict,
+} from './setup'
+import type { Extra, Os, SetupWorld } from './setup'
 
 type $ = EngineInterface
 
@@ -723,6 +727,169 @@ async function deliver($: $, e: { agentId?: string }, r: ToolCallResult) {
   return { ...r, context: [...(r.context ?? []), inboxPrompt(inbox, owner())] }
 }
 
+// ------------------------------------------------------------ setup
+
+// Windows is where the profile folder is the home (`USERPROFILE`) and `OS` says so.
+async function osOf($: $): Promise<Os> {
+  if ((await $.env.get('OS')) === 'Windows_NT') return 'windows'
+  return !(await $.env.get('HOME')) && (await $.env.get('USERPROFILE')) ? 'windows' : 'posix'
+}
+
+// The world `/autopilot setup` decides from: the file as it is on disk (whatever its
+// mode, which the flow reports itself), the engine's version, pairing and the switch.
+async function readWorld($: $): Promise<SetupWorld> {
+  const home = await homeDir($)
+  const path = secretsFile(home)
+  let file: SetupWorld['file'] = { exists: false }
+  try {
+    const st = await $.fs.stat(path)
+    if (st.kind === 'file') {
+      let values: Record<string, string> = {}
+      try { values = parseEnvFile(await $.fs.read(path)) } catch {}
+      file = { exists: true, mode: await fileMode($, path), values }
+    }
+  } catch {}
+  let version: string | undefined
+  try { version = (await $.session.version()).version } catch {}
+  return {
+    os: await osOf($), home, version, file,
+    ownerName: cfg.ownerName,
+    paired: Boolean(await tgChat($)),
+    pairPending: (await pairPending($)) !== undefined,
+    enabled: await isEnabled($),
+  }
+}
+
+// Creates the secrets file private to the owner; the error text when it could not.
+async function createSecretsFile($: $, w: SetupWorld) {
+  const cmd = createFileCommand(w.os, w.home)
+  try {
+    if (cmd) {
+      const r = await $.process.run(cmd.argv, { stdin: cmd.stdin, timeoutMs: 10_000 })
+      if (r.exitCode !== 0) return r.stderr.trim().slice(0, 200) || `exit ${r.exitCode}`
+    } else {
+      await $.fs.write(secretsFile(w.home), SECRETS_TEMPLATE)
+      const r = await $.process.run(windowsRestrict(w.home), { timeoutMs: 10_000 })
+      if (r.exitCode !== 0) return `file written, but icacls failed: ${r.stderr.trim().slice(0, 200) || `exit ${r.exitCode}`}`
+    }
+  } catch (err) {
+    return redact(String(err)).slice(0, 200)
+  }
+  return undefined
+}
+
+// A documented, non-billed authenticated call: the models the key's account may use.
+async function jevKeyCheck($: $, key: string): Promise<{ ok: boolean | undefined; status: string }> {
+  try {
+    const r = await $.http.fetch(JEV_MODELS_URL, { headers: { authorization: `Bearer ${key}` } })
+    if (r.ok) return { ok: true, status: `HTTP ${r.status}` }
+    if (r.status === 401 || r.status === 403) return { ok: false, status: `HTTP ${r.status}` }
+    return { ok: undefined, status: `HTTP ${r.status}` }
+  } catch (err) {
+    return { ok: undefined, status: redact(String(err), [key]).slice(0, 120) }
+  }
+}
+
+// The engine's own dialog; undefined when nobody can be asked (a -p run) or it was dismissed.
+async function ask($: $, question: string, options: readonly string[], header: string) {
+  try {
+    return await $.ui.ask(question, { options, header })
+  } catch {
+    return undefined
+  }
+}
+
+const KEEP_NAME = 'Keep "the owner"'
+
+// Stores the name in the plugin's own `ownerName` option and uses it from now on.
+async function setOwnerName($: $, name: string) {
+  cfg.ownerName = name
+  try {
+    const r = await $.config.set({ key: `${$.plugin.name}.ownerName`, value: name })
+    return r.deny
+  } catch (err) {
+    return String(err).slice(0, 160)
+  }
+}
+
+async function switchAutopilot($: $, on: boolean) {
+  await $.store.set('enabled', on)
+  await stateChange($) // this session reads it in the command's output
+  await showStatus($)
+  if (on && (await tgChat($))) await say($, `🟢 Autopilot on for every session on this machine (switched on from <b>${esc(await project($))}</b>).`)
+}
+
+// The guided first-time flow. Every run starts from the world as it is, so it resumes
+// wherever the last run stopped, and a finished setup just reports itself.
+async function runSetup($: $): Promise<string> {
+  const done: string[] = []
+  const extra: Extra = {}
+  const finish = (w: SetupWorld, text: string) => [...done, ...summaryLines(w, extra), '', text].join('\n')
+
+  let w = await readWorld($)
+  let step = nextStep(w)
+  if (step.kind === 'create-file') {
+    const err = await createSecretsFile($, w)
+    if (err) return finish(w, `Could not create ${secretsFile(w.home)}: ${err}`)
+    done.push(stepText(step, w), '')
+    w = await readWorld($)
+    step = nextStep(w)
+  }
+  if (step.kind === 'fix-mode' || step.kind === 'add-secret') return finish(w, stepText(step, w))
+
+  if (step.kind === 'verify') {
+    let token = false
+    try {
+      const bot = await tg($, 'getMe', {})
+      extra.botUser = bot?.username
+      token = true
+    } catch (err) {
+      extra.tokenError = (err as Error).message.slice(0, 200)
+    }
+    let jevOk: boolean | undefined
+    if (step.jevKey === 'present') {
+      const c = await jevKeyCheck($, w.file.exists ? w.file.values.TYPESAFE_API_KEY! : '')
+      jevOk = c.ok
+      extra.jevStatus = c.status
+    } else if (step.jevKey === 'malformed') jevOk = false
+    w = { ...w, checks: { token, jev: jevOk } }
+    step = nextStep(w)
+  }
+  if (step.kind === 'bad-token') return finish(w, stepText(step, w, extra))
+
+  if (step.kind === 'name') {
+    const a = await ask($, 'What should prompts and Telegram text call you? (type your first name under Other)', [KEEP_NAME, 'Skip for now'], 'Owner name')
+    const name = a && a !== KEEP_NAME && a !== 'Skip for now' ? a.trim().slice(0, 40) : ''
+    if (name) {
+      const deny = await setOwnerName($, name)
+      done.push(deny ? `Using "${name}" for this session; saving it failed (${deny}). Run /plugin configure to set ownerName.` : `Owner name set to "${name}".`)
+      w = { ...w, ownerName: name }
+    } else if (a === undefined) {
+      done.push(stepText(step, w))
+    }
+    w = { ...w, askName: false }
+    step = nextStep(w)
+  }
+
+  if (step.kind === 'pair-pending') {
+    const p = await pairPending($)
+    return finish(w, stepText(step, w, { ...extra, pairCode: p && showPairCode(p) }))
+  }
+  if (step.kind === 'pair') {
+    const code = newPairCode(Date.now())
+    await $.store.set('pairCode', code)
+    return finish(w, stepText(step, w, { ...extra, pairCode: showPairCode(code) }))
+  }
+  if (step.kind === 'enable') {
+    const a = await ask($, 'Turn autopilot on now, for every Claude Code session on this machine?', ['Yes, turn it on', 'Not yet'], 'Autopilot')
+    if (a !== 'Yes, turn it on') return finish(w, stepText(step, w))
+    await switchAutopilot($, true)
+    w = { ...w, enabled: true }
+    step = nextStep(w)
+  }
+  return finish(w, stepText(step, w, extra))
+}
+
 const stringList = (v: unknown): readonly string[] | undefined =>
   Array.isArray(v) ? v.map(String).map(s => s.trim()).filter(Boolean) : typeof v === 'string' && v.trim() ? v.split(/[,\n]/).map(s => s.trim()).filter(Boolean) : undefined
 
@@ -740,7 +907,7 @@ export const register: Register = (on, options) => {
   // ------------------------------------------------------------ session & commands
 
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'autopilot', description: 'Jev autopilot: on | off | status | pair | unpair | test | log' })
+    await $.command.register({ name: 'autopilot', description: 'Jev autopilot: setup | on | off | status | pair | unpair | test | log | name <you>' })
     $.clock.every(3000, () => void tick($))
     await showStatus($)
     return next(e)
@@ -788,11 +955,17 @@ export const register: Register = (on, options) => {
     const hasTg = Boolean(await tgToken($))
     const chat = await tgChat($)
 
+    if (sub === 'setup') {
+      return { text: await runSetup($) }
+    }
+    if (sub === 'name') {
+      const name = e.args.trim().replace(/^name\s*/, '').trim().slice(0, 40)
+      if (!name) return { text: `Owner name: ${owner()}. Usage: /autopilot name <your first name> (a name is not a secret; never put a token here).` }
+      const deny = await setOwnerName($, name)
+      return { text: deny ? `Using "${name}" for this session; saving it failed (${deny}). Run /plugin configure to set ownerName.` : `Owner name set to "${name}".` }
+    }
     if (sub === 'on' || sub === 'off') {
-      await $.store.set('enabled', sub === 'on')
-      await stateChange($) // this session reads it in the command's output
-      await showStatus($)
-      if (sub === 'on' && chat) await say($, `🟢 Autopilot on for every session on this machine (switched on from <b>${esc(await project($))}</b>).`)
+      await switchAutopilot($, sub === 'on')
       return { text: `Autopilot ${sub} for every session on this machine.${sub === 'on' && !hasJev ? ' Warning: TYPESAFE_API_KEY is not set, so nothing will be screened.' : ''}` }
     }
     if (sub === 'pair') {

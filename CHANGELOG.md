@@ -6,6 +6,20 @@ All notable changes to jev-autopilot are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `/autopilot setup`: a guided first-time flow. It checks the Claude Code version,
+  creates `~/.claude/jev-autopilot/secrets.env` readable by you only from a
+  commented template, says exactly where to put each secret (an editor line, or a
+  one-line terminal command per OS that reads the value hidden; never the chat),
+  checks the bot token with Telegram's `getMe` and the TypeSafe key with the
+  non-billed `GET /v1/models`, asks your name and saves it as `ownerName`, issues
+  the pairing code, and offers to switch autopilot on. Re-running it resumes where
+  it stopped. Paths and commands are spelled for macOS/Linux and for Windows.
+- `/autopilot name <name>` sets `ownerName` without leaving Claude Code.
+- README: a Quick start (two install commands and `/autopilot setup`), with the
+  manual steps kept for reference and Windows variants wherever paths appear.
+
 ### Fixed
 
 - Notices no longer read `jev-autopilot: autopilot: …`; Claude Code already names

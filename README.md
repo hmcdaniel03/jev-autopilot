@@ -20,6 +20,23 @@ works with.
 > turning it on, and keep Claude Code's own permission mode as a second line of
 > defence rather than running with permissions bypassed.
 
+## Quick start
+
+```sh
+claude plugin marketplace add hmcdaniel03/jev-autopilot
+claude plugin install jev-autopilot@jev-autopilot
+```
+
+Then, inside Claude Code, run **`/autopilot setup`**. It checks the prerequisites,
+creates the secrets file readable by you only (`~/.claude/jev-autopilot/secrets.env`;
+`%USERPROFILE%\.claude\jev-autopilot\secrets.env` on Windows), tells you exactly where
+to put the Telegram bot token and the TypeSafe key (in that file, never in the chat:
+it prints an editor instruction and a one-line terminal command that reads the value
+hidden), checks the token with Telegram and the key with TypeSafe, asks your name,
+pairs your phone and offers to switch autopilot on. Run it again after each step you
+do by hand; it resumes where it left off, and a finished setup just reports itself.
+The steps it replaces are under [Setup](#setup).
+
 ## Requirements
 
 - Claude Code **2.1.289** or newer (the version this release was tested with). Mods
@@ -42,35 +59,58 @@ claude plugin list    # jev-autopilot@jev-autopilot, Status: enabled
 ```
 
 Or from a clone, by listing the folder in `CLAUDE_CODE_PLUGIN_DIRS` (use `:` between
-paths on macOS/Linux, `;` on Windows) in the `env` block of `~/.claude/settings.json`,
-or by starting Claude Code with `--plugin-dir /path/to/jev-autopilot`. Loaded that
-way its id is `jev-autopilot@inline`: use that in place of `jev-autopilot@jev-autopilot`
-in the `configure` commands below.
+paths on macOS/Linux, `;` on Windows) in the `env` block of `~/.claude/settings.json`
+(`%USERPROFILE%\.claude\settings.json` on Windows), or by starting Claude Code with
+`--plugin-dir /path/to/jev-autopilot` (`--plugin-dir C:\path\to\jev-autopilot`).
+Loaded that way its id is `jev-autopilot@inline`: use that in place of
+`jev-autopilot@jev-autopilot` in the `configure` commands below.
+
+```json
+"CLAUDE_CODE_PLUGIN_DIRS": "/home/sam/jev-autopilot:/home/sam/other-mod"
+"CLAUDE_CODE_PLUGIN_DIRS": "C:\\Users\\sam\\jev-autopilot;C:\\Users\\sam\\other-mod"
+```
 
 ## Setup
 
-1. **Secrets.** Create `~/.claude/jev-autopilot/secrets.env`, readable by you only:
+`/autopilot setup` does all of this. The steps are here for reference, and for the
+pieces you prefer to do by hand; the command notices what is already done.
+
+1. **Secrets.** Create `~/.claude/jev-autopilot/secrets.env`, readable by you only.
+   Never type a token into the Claude Code chat or a slash command: that lands in
+   the transcript. In your own terminal, macOS/Linux:
 
    ```sh
    mkdir -p ~/.claude/jev-autopilot
-   cat > ~/.claude/jev-autopilot/secrets.env <<'EOF'
-   TELEGRAM_BOT_TOKEN=123456789:replace-with-the-token-from-BotFather
-   TYPESAFE_API_KEY=replace-with-your-TypeSafe-key
-   EOF
-   chmod 600 ~/.claude/jev-autopilot/secrets.env
+   (umask 077; : > ~/.claude/jev-autopilot/secrets.env); chmod 600 ~/.claude/jev-autopilot/secrets.env
+   printf 'Telegram bot token: '; read -rs v; echo; printf 'TELEGRAM_BOT_TOKEN=%s\n' "$v" >> ~/.claude/jev-autopilot/secrets.env; unset v
+   printf 'TypeSafe API key: '; read -rs v; echo; printf 'TYPESAFE_API_KEY=%s\n' "$v" >> ~/.claude/jev-autopilot/secrets.env; unset v
    ```
 
-   Replace both values; leave out `TYPESAFE_API_KEY` until you have a key. The file
-   is read first; the same names in the process environment are the fallback. The
-   file is preferred because every shell command Claude runs inherits the process
-   environment, so a key in the `env` block of your settings is one `env` away from
-   the transcript. A file with group or world permissions is ignored with a warning.
-   `TELEGRAM_CHAT_ID` may also be set here to pin the paired chat. The path is under
-   your home folder even if you set `CLAUDE_CONFIG_DIR`.
+   Windows, in PowerShell (`%USERPROFILE%\.claude\jev-autopilot\secrets.env`):
+
+   ```powershell
+   New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\jev-autopilot" | Out-Null
+   $f = "$env:USERPROFILE\.claude\jev-autopilot\secrets.env"
+   New-Item -ItemType File -Force $f | Out-Null
+   icacls $f /inheritance:r /grant:r "$env:USERNAME:(R,W)"
+   $s = Read-Host 'Telegram bot token' -AsSecureString; $v = [Net.NetworkCredential]::new('', $s).Password; Add-Content -Path $f -Value "TELEGRAM_BOT_TOKEN=$v"; Remove-Variable v, s
+   $s = Read-Host 'TypeSafe API key' -AsSecureString; $v = [Net.NetworkCredential]::new('', $s).Password; Add-Content -Path $f -Value "TYPESAFE_API_KEY=$v"; Remove-Variable v, s
+   ```
+
+   Or open the file in an editor and add the `KEY=VALUE` lines yourself. Leave out
+   `TYPESAFE_API_KEY` until you have a key. The file is read first; the same names
+   in the process environment are the fallback. The file is preferred because every
+   shell command Claude runs inherits the process environment, so a key in the
+   `env` block of your settings is one `env` away from the transcript. A file with
+   group or world permissions is ignored with a warning (permissions are not checked
+   on Windows; `icacls` above restricts the file to you). `TELEGRAM_CHAT_ID` may
+   also be set here to pin the paired chat. The path is under your home folder even
+   if you set `CLAUDE_CONFIG_DIR`.
 
 2. **Name yourself (optional).** Set the `ownerName` option so prompts and Telegram
-   text say your name instead of "the owner": `/plugin configure jev-autopilot@jev-autopilot`
-   inside Claude Code, or from a shell:
+   text say your name instead of "the owner": `/autopilot name Sam` inside Claude
+   Code (a name is not a secret), `/plugin configure jev-autopilot@jev-autopilot`,
+   or from a shell:
 
    ```sh
    echo '{"ownerName":"Sam"}' | claude plugin configure jev-autopilot@jev-autopilot --values-stdin
@@ -102,7 +142,9 @@ In Claude Code:
 
 | Command | What it does |
 | --- | --- |
+| `/autopilot setup` | Guided first-time setup; safe to re-run, resumes where it stopped |
 | `/autopilot on` / `off` | Switch autopilot for every session on this machine |
+| `/autopilot name <name>` | Set `ownerName`, how prompts and Telegram text refer to you |
 | `/autopilot status` | Role, secrets, pairing, Firstmate detection, log path |
 | `/autopilot pair` / `unpair` | Pair a private Telegram chat, or forget it |
 | `/autopilot test` | Send a test message and listen for a reply for 3 minutes |
@@ -123,6 +165,7 @@ On Telegram, in the paired chat:
 Set with `/plugin configure jev-autopilot@jev-autopilot` in Claude Code, or pipe a JSON
 object to `claude plugin configure jev-autopilot@jev-autopilot --values-stdin`
 (`claude plugin configure jev-autopilot@jev-autopilot` alone lists what is set).
+`ownerName` can also be set with `/autopilot name <name>`.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
@@ -174,6 +217,7 @@ fallback that pretends to screen. `/autopilot on` warns when no key is set.
 To **Telegram** (Telegram's servers and your phone), only while autopilot is on, a
 pairing code is pending, or for three minutes after `/autopilot test`:
 
+- `/autopilot setup` and `/autopilot pair` call `getMe` to check the bot token.
 - Questions Claude asks, their options and Jev's suggestion.
 - Held tool calls: the tool and up to 900 characters of the command or path.
 - Firstmate captain calls: title, reason and up to 1,200 characters of detail, and
@@ -181,7 +225,8 @@ pairing code is pending, or for three minutes after `/autopilot test`:
 - The session's final reply for every turn you started from Telegram (up to four
   messages of 4,096 characters), `/status` answers and short receipts.
 
-To **TypeSafe** (Jev), only while autopilot is on:
+To **TypeSafe** (Jev), only while autopilot is on (and, from `/autopilot setup`, one
+`GET /v1/models` call that checks the key and is not billed):
 
 - For each question: the question, its options, your project folder name and path,
   and the last ten conversation messages (up to 6,000 characters).
@@ -261,7 +306,8 @@ The type check needs `.claude-plugin/types/`, which Claude Code generates whenev
 loads the mod; it is git-ignored. `claude --plugin-dir . -p '/autopilot status'`
 generates it without signing in, which is what CI does. `hooks/core.ts` and
 `hooks/trust.ts` hold the pure logic and are unit-tested; `hooks/register.ts` wires
-them to the engine and is covered by harness tests in `tests/register.test.ts`.
+them to the engine and is covered by harness tests in `tests/register.test.ts`;
+`hooks/setup.ts` is the `/autopilot setup` state machine and its printed text.
 
 ## License
 

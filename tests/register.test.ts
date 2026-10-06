@@ -278,3 +278,234 @@ test('a turn that an API error ended is not checked for a stall, an answered one
   await $.turn.complete({ ...end, answer: 'Done with step one.', turnId: 't2', reason: 'answer' })
   expect(fetches.some(f => f.url.includes('typesafe'))).toBe(true)
 })
+
+// ---------------------------------------------------------------- /autopilot setup
+
+// `sh` under umask 077 writes the template as a private file; `icacls` is Windows' restriction.
+function fakeSetupProcess(on: On, files: Files, ran: string[][]) {
+  on('process.run', async (_$, e) => {
+    const [cmd, ...rest] = e.argv
+    ran.push([...e.argv])
+    const ok = (stdout = '') => ({ value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
+    const fail = (code = 1) => ({ value: { exitCode: code, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
+    if (cmd === 'stat') {
+      const f = files[rest.at(-1)!]
+      return f?.mode && rest[0] === '-f' ? ok(`${f.mode}\n`) : fail()
+    }
+    if (cmd === 'sh' && rest[1]?.includes('umask 077')) {
+      const path = rest.at(-1)!
+      if (!files[path]) files[path] = { text: e.init?.stdin ?? '', mode: '600' }
+      return ok()
+    }
+    if (cmd === 'icacls') return ok()
+    if (cmd === 'git') return fail(128)
+    return fail(127)
+  })
+}
+
+// Telegram's getMe answers per `tokenOk`; TypeSafe's models list per `jevOk`.
+function fakeSetupNet(on: On, fetches: { url: string; method: string; headers: Record<string, string> }[], ok: { token: boolean; jev: boolean | number }) {
+  on('http.fetch', async (_$, e) => {
+    fetches.push({ url: e.url, method: e.init?.method ?? 'GET', headers: e.init?.headers ?? {} })
+    if (e.url.includes('typesafe')) {
+      const status = ok.jev === true ? 200 : ok.jev === false ? 401 : ok.jev
+      return { value: { status, ok: status === 200, headers: {}, text: status === 200 ? '{"models":[{"name":"jev-latest"}]}' : '{"error":"no"}' } }
+    }
+    if (e.url.includes('getMe')) {
+      return { value: ok.token
+        ? { status: 200, ok: true, headers: {}, text: JSON.stringify({ ok: true, result: { username: 'sams_bot' } }) }
+        : { status: 401, ok: false, headers: {}, text: JSON.stringify({ ok: false, description: 'Unauthorized' }) } }
+    }
+    return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ ok: true, result: { message_id: 1 } }) } }
+  })
+}
+
+// The engine's AskUserQuestion dialog, answered from a script keyed by the question's header.
+function fakeDialog(on: On, answers: Record<string, string>) {
+  on('tool.call', { tool: 'AskUserQuestion' }, async (_$, e) => {
+    const q = e.questions[0]!
+    const a = answers[q.header]
+    if (a === undefined) return { deny: 'dismissed' }
+    return { result: { questions: e.questions, answers: { [q.question]: a } } }
+  })
+}
+
+const version = (on: On) => on('session.version', async () => ({ value: { version: '2.1.290', base: '2.1.290' } }))
+
+// An in-memory store the test can read back (mock.store keeps its entries to itself).
+function trackedStore(on: On, entries: Record<string, unknown> = {}) {
+  const store: Record<string, unknown> = { ...entries }
+  on('store.get', async (_$, e) => ({ value: store[e.key] }))
+  on('store.set', async (_$, e) => {
+    store[e.key] = e.value
+    return { value: undefined }
+  })
+  on('store.delete', async (_$, e) => {
+    delete store[e.key]
+    return { value: undefined }
+  })
+  on('store.keys', async () => ({ value: Object.keys(store) }))
+  return store
+}
+
+test('setup creates the secrets file private to the owner and sends the user to add the token, never into the chat', async ($, on) => {
+  const files: Files = {}
+  const ran: string[][] = []
+  mock.store(on)
+  mock.env(on, { HOME })
+  fakeSession(on, CWD)
+  fakeFs(on, files)
+  fakeSetupProcess(on, files, ran)
+  version(on)
+  const r = await autopilot($, 'setup')
+  expect(files[SECRETS]).toMatchObject({ mode: '600' })
+  expect(files[SECRETS]!.text).toContain('# jev-autopilot secrets')
+  expect(ran.some(a => a[0] === 'sh' && a[2]!.includes('umask 077'))).toBe(true)
+  expect(r.text).toContain('Claude Code 2.1.290 ✓')
+  expect(r.text).toContain(`Created ${SECRETS}`)
+  expect(r.text).toContain('Add **TELEGRAM_BOT_TOKEN**')
+  expect(r.text).toContain('Do not paste it into this chat')
+  expect(r.text).toContain('read -rs v')
+  expect(r.text).toContain('/autopilot setup')
+  // nothing went over the network and the file was not touched again
+  const again = await autopilot($, 'setup')
+  expect(again.text).not.toContain('Created')
+  expect(again.text).toContain('Add **TELEGRAM_BOT_TOKEN**')
+})
+
+test('setup stops on a file others can read, with the chmod to run', async ($, on) => {
+  const files: Files = { [SECRETS]: { text: `TELEGRAM_BOT_TOKEN=${TOKEN}\n`, mode: '644' } }
+  mock.store(on)
+  mock.env(on, { HOME })
+  fakeSession(on, CWD)
+  fakeFs(on, files)
+  fakeSetupProcess(on, files, [])
+  version(on)
+  const r = await autopilot($, 'setup')
+  expect(r.text).toContain('mode 644')
+  expect(r.text).toContain(`chmod 600 ${SECRETS}`)
+  expect(r.text).not.toContain(TOKEN)
+})
+
+test('setup stops when Telegram rejects the token, saying how to replace it', async ($, on) => {
+  const files = SECRET_FILES()
+  const fetches: { url: string; method: string; headers: Record<string, string> }[] = []
+  const writes = trackedStore(on)
+  mock.env(on, { HOME })
+  fakeSession(on, CWD)
+  fakeFs(on, files)
+  fakeSetupProcess(on, files, [])
+  fakeSetupNet(on, fetches, { token: false, jev: true })
+  version(on)
+  const r = await autopilot($, 'setup')
+  expect(r.text).toContain('TELEGRAM_BOT_TOKEN: rejected by Telegram ✗')
+  expect(r.text).toContain('Telegram rejected the bot token')
+  expect(r.text).toContain('Unauthorized')
+  expect(r.text).toContain('@BotFather')
+  expect(r.text).not.toContain(TOKEN)
+  // no pairing code was issued
+  expect(writes.pairCode).toBe(undefined)
+})
+
+test('setup checks the Jev key with the non-billed models call, asks the name, saves it, and starts pairing', async ($, on) => {
+  const files = SECRET_FILES()
+  const fetches: { url: string; method: string; headers: Record<string, string> }[] = []
+  const configured: { key: string; value: unknown }[] = []
+  const writes = trackedStore(on)
+  mock.env(on, { HOME })
+  fakeSession(on, CWD)
+  fakeFs(on, files)
+  fakeSetupProcess(on, files, [])
+  fakeSetupNet(on, fetches, { token: true, jev: true })
+  fakeDialog(on, { 'Owner name': 'Sam' })
+  on('config.set', async (_$, e) => {
+    configured.push({ key: e.key, value: e.value })
+    return { value: e.value }
+  })
+  version(on)
+  const r = await autopilot($, 'setup')
+  const models = fetches.find(f => f.url.includes('typesafe'))!
+  expect(models.url).toBe('https://api.typesafe.ai/v1/models')
+  expect(models.method).toBe('GET')
+  expect(models.headers.authorization).toBe('Bearer ts-key-0123456789')
+  expect(r.text).toContain('TELEGRAM_BOT_TOKEN: valid ✓ (@sams_bot)')
+  expect(r.text).toContain('TYPESAFE_API_KEY: valid ✓')
+  expect(configured).toEqual([{ key: 'jev-autopilot.ownerName', value: 'Sam' }])
+  expect(r.text).toContain('Owner name set to "Sam"')
+  const code = writes.pairCode as { code: string } | undefined
+  expect(code?.code.length).toBe(10)
+  expect(r.text).toContain(`Send **${code!.code.slice(0, 5)}-${code!.code.slice(5)}** to @sams_bot in a **private** Telegram chat`)
+  expect(r.text).not.toContain('ts-key-0123456789')
+  expect(r.text).not.toContain(TOKEN)
+  // the name sticks for this session
+  expect((await autopilot($, 'status')).text).toContain('Owner: Sam')
+})
+
+test('setup resumes after pairing: a rejected Jev key is reported, and the final step switches autopilot on', async ($, on) => {
+  const files = SECRET_FILES()
+  const fetches: { url: string; method: string; headers: Record<string, string> }[] = []
+  const writes = trackedStore(on, { tgChatId: '42' })
+  mock.env(on, { HOME })
+  fakeSession(on, CWD)
+  fakeFs(on, files)
+  fakeSetupProcess(on, files, [])
+  fakeSetupNet(on, fetches, { token: true, jev: false })
+  on('ui.status', async () => ({ value: undefined }))
+  fakeDialog(on, { 'Owner name': 'Skip for now', Autopilot: 'Yes, turn it on' })
+  version(on)
+  const r = await autopilot($, 'setup')
+  expect(r.text).toContain('TYPESAFE_API_KEY: rejected by TypeSafe ✗ (HTTP 401)')
+  expect(r.text).toContain('Telegram: paired ✓')
+  expect(r.text).toContain('Autopilot is on')
+  expect(writes.enabled).toBe(true)
+  // the switch was announced to the paired chat
+  expect(fetches.some(f => f.url.includes('sendMessage'))).toBe(true)
+  // a second run only reports
+  const again = await autopilot($, 'setup')
+  expect(again.text).toContain('Autopilot: on')
+  expect(again.text).toContain('Autopilot is on')
+})
+
+test('setup with nobody to ask prints the name hint and the /autopilot on step instead of a dialog', async ($, on) => {
+  const files = SECRET_FILES()
+  const writes = trackedStore(on, { tgChatId: '42' })
+  mock.env(on, { HOME })
+  fakeSession(on, CWD)
+  fakeFs(on, files)
+  fakeSetupProcess(on, files, [])
+  fakeSetupNet(on, [], { token: true, jev: 529 })
+  fakeDialog(on, {}) // every dialog is dismissed
+  on('config.set', async (_$, e) => ({ value: e.value }))
+  version(on)
+  const r = await autopilot($, 'setup')
+  expect(r.text).toContain('/autopilot name')
+  expect(r.text).toContain('TYPESAFE_API_KEY: present (not verified: HTTP 529)')
+  expect(r.text).toContain('Run `/autopilot on`')
+  expect(writes.enabled).toBe(undefined)
+  // the name can be set by hand; it is not a secret
+  expect((await autopilot($, 'name Sam')).text).toContain('Owner name set to "Sam"')
+  expect((await autopilot($, 'status')).text).toContain('Owner: Sam')
+})
+
+test('setup on Windows writes the file, restricts it with icacls, and prints PowerShell with backslash paths', async ($, on) => {
+  const files: Files = {}
+  const ran: string[][] = []
+  const WIN_SECRETS = 'C:/Users/sam/.claude/jev-autopilot/secrets.env'
+  mock.store(on)
+  mock.env(on, { USERPROFILE: 'C:\\Users\\sam', OS: 'Windows_NT' })
+  fakeSession(on, 'C:/Users/sam/project')
+  fakeFs(on, files)
+  fakeSetupProcess(on, files, ran)
+  version(on)
+  const r = await autopilot($, 'setup')
+  // (the test host is not Windows, so the engine resolves `C:/...` as a relative path; the tail is what matters)
+  const written = Object.keys(files).find(k => k.endsWith(WIN_SECRETS))
+  expect(files[written!]?.text).toContain('# jev-autopilot secrets')
+  expect(ran.some(a => a[0] === 'icacls' && a[1] === 'C:\\Users\\sam\\.claude\\jev-autopilot\\secrets.env')).toBe(true)
+  expect(ran.some(a => a[0] === 'sh')).toBe(false)
+  expect(r.text).toContain('Created C:\\Users\\sam\\.claude\\jev-autopilot\\secrets.env')
+  expect(r.text).toContain('permissions not checked on Windows')
+  expect(r.text).toContain('Read-Host')
+  expect(r.text).toContain('-AsSecureString')
+  expect(r.text).toContain('"$env:USERPROFILE\\.claude\\jev-autopilot\\secrets.env"')
+})
