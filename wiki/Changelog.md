@@ -6,7 +6,6 @@ This wiki is maintained alongside the code and describes the state of `main`. Wh
 
 ## Summary
 
-- **Unreleased** (after 0.1.0): `/autopilot setup`, the guided first-time flow; `/autopilot name`; the decisions log says `let through after approval` instead of claiming the call ran; a turn that ended on an API error is not nudged; toasts are no longer double-prefixed; CI type-checks without a secret; README Quick start and Windows paths.
-- **0.1.0** (2026-10-05): first public release. The machine-wide switch, Jev answers and screening, Telegram escalation with Proceed/Block, keep-going nudges, remote control from the chat, the secrets file, redaction, pairing with a random code, scoped approvals, `tempRoots`, the optional Firstmate integration, and the decisions log.
+- **0.1.0** (2026-10-06): first public release. The machine-wide switch, Jev answers and screening, Telegram escalation with Proceed/Block, keep-going nudges, remote control from the chat, the secrets file, redaction, pairing with a random code, scoped approvals, `tempRoots`, the optional Firstmate integration, the decisions log, `/autopilot setup` (the guided first-time flow), `/autopilot name`, `/autopilot help`, and pull requests raised through no-mistakes.
 
 Only the latest release is supported; Claude Code's mods API can change between releases, so keep Claude Code current too.

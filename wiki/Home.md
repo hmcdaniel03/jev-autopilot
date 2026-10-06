@@ -8,7 +8,7 @@
 - You can steer the session from the paired Telegram chat: send directions, answer prompts in your own words, ask `/status`, or `/stop` the current turn.
 - Every decision is appended to a local log you can read with `/autopilot log`.
 
-This wiki documents version **0.1.0** and the unreleased changes on `main` (see [[Changelog]]). The repository's README is the short entry point; the pages here go into the detail.
+This wiki documents version **0.1.0** (see [[Changelog]]). The repository's README is the short entry point; the pages here go into the detail.
 
 ## Who it is for
 

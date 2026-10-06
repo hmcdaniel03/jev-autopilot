@@ -62,8 +62,8 @@ Live Jev can score read-like shell commands close to the threshold. Anything bel
 **A toast says `Jev unreachable, tool calls are not being screened right now`.**
 The key is missing or rejected, or the API is down. Calls go on to Claude Code's permission mode, which still applies as without the plugin; there is no fake screening. Fix the key (`/autopilot setup` verifies it) or wait. The toast repeats at most once a minute.
 
-**Claude was nudged to keep going after its sign-in was revoked.**
-Fixed after 0.1.0: a turn that ends on an API error is no longer checked for a stall. Before that, the nudge failed the same way the turn did.
+**Will Claude be nudged to keep going after its sign-in is revoked?**
+No. A turn that ends on an API error (sign-in revoked, outage) is not checked for a stall, since a nudge would fail the same way.
 
 **Claude keeps getting nudged.**
 At most three nudges since you last typed a prompt yourself, and a nudge whose turn did no tool calls ends the nudging early. Typing a prompt resets the budget.
@@ -73,8 +73,8 @@ At most three nudges since you last typed a prompt yourself, and a nudge whose t
 **The status line shows `⚠ jev-autopilot: autopilot ●`. Is something wrong?**
 No. Claude Code draws every plugin status line with that `⚠` marker; the plugin cannot change it.
 
-**Toasts read `jev-autopilot: autopilot: …`.**
-An older build double-prefixed them; Claude Code already names the plugin. Fixed after 0.1.0.
+**Why do toasts start with `jev-autopilot:`?**
+Claude Code names the plugin on every toast; the plugin's own text follows without a second prefix.
 
 **No badge or toasts in a headless run.**
 `claude -p` draws neither. The slash commands still work and print their replies.
