@@ -245,21 +245,12 @@ says why a folder was not detected.
 
 ## Development
 
-```sh
-claude plugin validate --strict .    # manifest and hooks
-claude plugin test .                 # tests, no account needed
-npx -y -p typescript@5 tsc --noEmit -p .   # after Claude Code has loaded the mod once
-```
-
-The type check needs `.claude-plugin/types/`, which Claude Code generates whenever it
-loads the mod; it is git-ignored. `claude --plugin-dir . -p '/autopilot status'`
-generates it without signing in, which is what CI does. `hooks/core.ts` and
-`hooks/trust.ts` hold the pure logic and are unit-tested; `hooks/register.ts` wires
-them to the engine and is covered by harness tests in `tests/register.test.ts`;
-`hooks/setup.ts` is the `/autopilot setup` state machine and its printed text.
+Contributions go through no-mistakes; see [CONTRIBUTING.md](CONTRIBUTING.md) for the
+workflow, the checks it runs and a map of the code.
 
 The wiki's sources are in `wiki/`; edit them with the code and publish with
-`scripts/publish-wiki.sh` (see the wiki's Development page).
+`scripts/publish-wiki.sh` (see the wiki's
+[Development and Contributing](https://github.com/hmcdaniel03/jev-autopilot/wiki/Development-and-Contributing) page).
 
 ## License
 

@@ -1,0 +1,54 @@
+# Derived from kunchenguid/firstmate (MIT): .github/workflows/no-mistakes-required.yml.
+# Copyright (c) 2026 Kun Chen. MIT License; the full notice is in
+# .github/scripts/require-no-mistakes.py, the verifier this workflow runs.
+#
+# Pull requests to main must be raised through no-mistakes (see CONTRIBUTING.md):
+# the body must carry the no-mistakes signature and a v1 pipeline attestation bound
+# to the current head commit, with review, test and document completed. Firstmate
+# calls the upstream composite action; this repository runs a copy of its verifier
+# so the gate is self-contained.
+#
+# The verifier is checked out from the PR's base commit, never the PR head, so a
+# pull request that edits it cannot certify itself, and no PR code is executed.
+# PRs from automation and from the repository owner pass without an attestation;
+# pushes to main never trigger this workflow, so the owner's direct pushes and
+# releases are unaffected.
+name: Require no-mistakes
+run-name: "PR #${{ github.event.pull_request.number }} body compliance - ${{ github.event.action }} - event ${{ github.run_number }} (run ${{ github.run_id }})"
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+# GitHub concurrency groups retain at most one pending run, replacing older
+# pending runs even when cancel-in-progress is false. Give body-bearing events
+# an immutable per-event group so first-time-fork approvals can never collapse
+# opened/edited checks. Keep synchronize/reopened coalescing as before.
+concurrency:
+  group: no-mistakes-required-${{ github.event.pull_request.number }}-${{ (github.event.action == 'opened' || github.event.action == 'edited') && github.run_id || 'head-change' }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    # Branch protection matches this exact name; keep it in step with firstmate's.
+    name: PR must be raised via no-mistakes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the verifier from the base commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - name: Verify no-mistakes signature and pipeline attestation
+        env:
+          NM_EXEMPT_AUTHORS: |
+            github-actions[bot]
+            dependabot[bot]
+            hmcdaniel03
+        run: python3 .github/scripts/require-no-mistakes.py

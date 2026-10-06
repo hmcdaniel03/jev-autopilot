@@ -26,6 +26,12 @@ All notable changes to jev-autopilot are recorded here. The format follows
   `/autopilot help`) is the way in; the manual install and setup steps are gone,
   leaving a short Advanced and troubleshooting section (clone install, where the
   secrets file lives, re-running setup).
+- CONTRIBUTING.md: pull requests are raised through
+  [no-mistakes](https://github.com/kunchenguid/no-mistakes), whose pipeline runs the
+  same checks as CI (`.no-mistakes.yaml`). A required check, **PR must be raised via
+  no-mistakes**, rejects a PR whose body lacks a completed no-mistakes attestation for
+  its current head; it is derived from kunchenguid/firstmate (MIT). The README's
+  Development notes moved there.
 
 ### Fixed
 
