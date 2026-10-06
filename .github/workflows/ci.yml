@@ -1,10 +1,11 @@
 # CI for the public jev-autopilot repository (this file is a no-op while the plugin
 # lives in a subfolder of another repo; GitHub only runs workflows from the root).
 #
-# validate + test need no account: `claude plugin test` runs the tests in a child of
-# the Claude Code binary with no session, sign-in or network. The type check needs the
-# engine's generated declarations, which Claude Code writes only when it loads the mod,
-# so that job runs when an ANTHROPIC_API_KEY secret is configured for the repo.
+# No job needs an account or a secret: `claude plugin test` runs the tests in a child
+# of the Claude Code binary with no session, sign-in or network. The type check needs
+# the engine's generated declarations, which Claude Code writes when it loads the mod;
+# running `/autopilot status` loads it without a sign-in because slash commands run
+# locally.
 name: ci
 
 on:
@@ -34,7 +35,6 @@ jobs:
 
   typecheck:
     runs-on: ubuntu-latest
-    if: ${{ vars.TYPECHECK == 'true' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -45,10 +45,8 @@ jobs:
           curl -fsSL https://claude.ai/install.sh | bash
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Generate the engine's type declarations by loading the mod once
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: claude --plugin-dir . --max-turns 1 -p 'Reply with the single word ok.' || true
+        run: claude --plugin-dir . -p '/autopilot status'
       - name: Type-check hooks and tests
         run: |
-          test -f .claude-plugin/types/tsconfig.json || { echo 'types were not generated; is ANTHROPIC_API_KEY set?'; exit 1; }
+          test -f .claude-plugin/types/tsconfig.json || { echo 'types were not generated'; exit 1; }
           npx -y -p typescript@5 tsc --noEmit -p .

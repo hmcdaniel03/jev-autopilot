@@ -121,7 +121,7 @@ async function fileSecrets($: $): Promise<Record<string, string>> {
     const key = `${mode}:${mtimeMs}`
     if (secretsWarned !== key) {
       secretsWarned = key
-      $.ui.toast(`autopilot: ignoring ${SECRETS_FILE} (mode ${mode}); run chmod 600 on it`)
+      $.ui.toast(`ignoring ${SECRETS_FILE} (mode ${mode}); run chmod 600 on it`)
     }
   } else {
     try { values = parseEnvFile(await $.fs.read(path)) } catch {}
@@ -212,7 +212,7 @@ async function fmScript($: $, name: 'bin/fm-captain-hold.sh' | 'bin/fm-fleet-sna
   if (d.home) return `${cwd}/${name}`
   if (Date.now() - scriptWarnedAt > 10 * 60_000) {
     scriptWarnedAt = Date.now()
-    $.ui.toast(`autopilot: not running Firstmate scripts (${d.reason})`)
+    $.ui.toast(`not running Firstmate scripts (${d.reason})`)
     await log($, { by: 'jev', fmTask: name, outcome: `not run: ${d.reason}` })
   }
   return undefined
@@ -467,7 +467,7 @@ async function pairPending($: $) {
   if (!state) return undefined
   if (state.until <= Date.now()) {
     await $.store.delete('pairCode')
-    $.ui.toast('autopilot: the pairing code expired; run /autopilot pair again')
+    $.ui.toast('the pairing code expired; run /autopilot pair again')
     return undefined
   }
   return state
@@ -497,13 +497,13 @@ async function handle($: $, u: TgUpdate) {
       await $.store.set('tgChatId', m.chatId)
       await $.store.delete('pairCode')
       await tg($, 'sendMessage', { chat_id: m.chatId, text: '🔗 Paired with Claude Code. Messages here now reach the session.' })
-      $.ui.toast(`autopilot: Telegram paired with ${m.who}`)
+      $.ui.toast(`Telegram paired with ${m.who}`)
     } else if (out.result === 'wrong') {
       await $.store.set('pairCode', out.state)
-      $.ui.toast(`autopilot: wrong pairing code from ${m.who} (${out.left} attempt${out.left === 1 ? '' : 's'} left)`)
+      $.ui.toast(`wrong pairing code from ${m.who} (${out.left} attempt${out.left === 1 ? '' : 's'} left)`)
     } else {
       await $.store.delete('pairCode')
-      $.ui.toast(`autopilot: pairing code ${out.result === 'burned' ? `burned after ${PAIR_ATTEMPTS} wrong guesses` : 'expired'}; run /autopilot pair again`)
+      $.ui.toast(`pairing code ${out.result === 'burned' ? `burned after ${PAIR_ATTEMPTS} wrong guesses` : 'expired'}; run /autopilot pair again`)
     }
     return
   }
@@ -700,7 +700,7 @@ async function keepGoing($: $, finalMessage: string) {
     return d.notice && who !== 'captain' ? notifyEnd($, d.notice, finalMessage) : undefined
   }
   nudges++
-  $.ui.toast('autopilot: work remains, nudging Claude to keep going')
+  $.ui.toast('work remains, nudging Claude to keep going')
   void $.prompt.submit({ text: nudgeText(owner()) })
 }
 
@@ -775,7 +775,8 @@ export const register: Register = (on, options) => {
     lastTurnEnded = e.turnId
     // Plain sessions: check right at turn end, at most every 5 minutes. Firstmate
     // ends a short turn on every crew update, so it is checked on idleness instead (tick).
-    if ((await getRole($)) === 'solo' && (await isListener($)) && Date.now() - lastStallCheck >= 5 * 60_000) {
+    // A turn an API error ended (sign-in revoked, outage) is not a stall: a nudge would fail the same way.
+    if (e.reason !== 'error' && (await getRole($)) === 'solo' && (await isListener($)) && Date.now() - lastStallCheck >= 5 * 60_000) {
       await keepGoing($, e.answer).catch(() => {})
     }
     return r
@@ -869,13 +870,13 @@ export const register: Register = (on, options) => {
       const body = buildQuestionRequest(questions, conversationContext(messages as never, questions, await $.session.cwd()))
       decision = decideQuestions(questions, await jev($, body), cfg)
     } catch (err) {
-      $.ui.toast(`autopilot: ${redact(String(err)).slice(0, 90)}; asking you here`)
+      $.ui.toast(`Jev failed (${redact(String(err)).slice(0, 80)}); asking you here`)
       return next(e)
     }
 
     if (decision.kind === 'auto') {
       await log($, { by: 'jev', questions: asked, answers: decision.answers, confidence: decision.confidence, stakes: decision.stakes, review: decision.review })
-      $.ui.toast(`autopilot: Jev answered (conf ${decision.confidence.toFixed(2)}${decision.review ? ', flagged' : ''})`)
+      $.ui.toast(`Jev answered (conf ${decision.confidence.toFixed(2)}${decision.review ? ', flagged' : ''})`)
       const note = decision.review
         ? `${owner()} is away; Jev (an automated decision model) answered with LOW confidence. Implement this choice in the most reversible way, note the assumption on the ticket, and keep going.`
         : `${owner()} is away; Jev (an automated decision model) answered this on ${owner()}'s behalf. Keep going.`
@@ -902,7 +903,7 @@ export const register: Register = (on, options) => {
         questions.map((q, i) => questionMessage(q, i, reqId, decision.reason, proj, decision.suggested[q.question])),
       )
     } catch (err) {
-      $.ui.toast(`autopilot: Telegram failed (${redact(String(err)).slice(0, 80)}); asking here`)
+      $.ui.toast(`Telegram failed (${redact(String(err)).slice(0, 80)}); asking here`)
       return next(e)
     }
 
@@ -945,7 +946,7 @@ export const register: Register = (on, options) => {
     if (allow !== undefined) {
       await $.store.delete(`allow:${key}`)
       if (approvalValid(allow, Date.now())) {
-        await log($, { by: 'human-telegram', tool: summary, outcome: 'ran after approval' })
+        await log($, { by: 'human-telegram', tool: summary, outcome: 'let through after approval' })
         return deliver($, e, await next(e))
       }
       await log($, { by: 'human-telegram', tool: summary, outcome: 'approval expired; screened again' })
@@ -960,7 +961,7 @@ export const register: Register = (on, options) => {
       // permission mode (and, under Firstmate, to Firstmate's own supervision).
       if (Date.now() - offlineToastAt > 60_000) {
         offlineToastAt = Date.now()
-        $.ui.toast('autopilot: Jev unreachable, tool calls are not being screened right now')
+        $.ui.toast('Jev unreachable, tool calls are not being screened right now')
       }
       return deliver($, e, await next(e))
     }
@@ -987,7 +988,7 @@ export const register: Register = (on, options) => {
     } catch (err) {
       const failure = redact(String(err), await knownSecrets($)).slice(0, 300)
       await log($, { by: 'telegram-error', tool: summary, risk: verdict.risk, pDanger: verdict.pDanger, outcome: failure })
-      $.ui.toast(`autopilot: Telegram failed while holding a call (${failure.slice(0, 80)})`)
+      $.ui.toast(`Telegram failed while holding a call (${failure.slice(0, 80)})`)
       return { deny: `jev-autopilot held this call (Jev rated it ${verdict.risk}, danger ${verdict.pDanger.toFixed(2)}) and could not reach ${owner()} on Telegram (${failure}). Do not retry it; park this step, keep going with other work, and mention it in your summary.` }
     }
     return {

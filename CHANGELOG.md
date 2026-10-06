@@ -4,6 +4,18 @@ All notable changes to jev-autopilot are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- Notices no longer read `jev-autopilot: autopilot: …`; Claude Code already names
+  the plugin.
+- CI type-checks every push without an `ANTHROPIC_API_KEY` secret.
+- The decisions log says an approved call was `let through after approval`, not that
+  it ran: Claude Code's own permission mode can still deny it. The README says so.
+- A turn that ended on an API error (sign-in revoked, outage) is no longer nudged to
+  keep going; the nudge could only fail the same way.
+
 ## [0.1.0] - 2026-10-05
 
 First public release.

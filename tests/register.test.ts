@@ -92,6 +92,8 @@ test('a world-readable secrets file is ignored and the environment is the fallba
   expect(r.text).toContain('Owner: Sam')
   expect(r.text).toContain('(ignored: mode 644; run chmod 600 on it)')
   expect(toasts.join('\n')).toContain('mode 644')
+  // Claude Code already prefixes a toast with the plugin name
+  expect(toasts.join('\n')).not.toContain('autopilot:')
 
   // chmod leaves the mtime alone, so the fix is seen without editing the file
   files[SECRETS]!.mode = '600'
@@ -235,6 +237,8 @@ test('a phone approval runs the call once, only in its own session and project, 
   // approved: runs without Jev or Telegram
   expect(await $.tool.call(DANGEROUS)).toMatchObject({ result: 'ran' })
   expect(fetches.length).toBe(0)
+  // the log says autopilot let it through; Claude Code's permission mode may still deny it
+  expect(files[`${HOME}/.claude/autopilot/decisions.jsonl`]!.text).toContain('let through after approval')
   // the approval was consumed: the same call is screened and held again
   const again = await $.tool.call(DANGEROUS)
   expect(JSON.stringify(again)).toContain('Held for')
@@ -254,4 +258,23 @@ test('an expired phone approval no longer counts', async ($, on) => {
   fakeNet(on, fetches)
   expect(JSON.stringify(await $.tool.call(DANGEROUS))).toContain('Held for')
   expect(files[`${HOME}/.claude/autopilot/decisions.jsonl`]!.text).toContain('approval expired; screened again')
+})
+
+// ---------------------------------------------------------------- keep going
+
+test('a turn that an API error ended is not checked for a stall, an answered one is', async ($, on) => {
+  const files = SECRET_FILES()
+  const fetches: Fetches = []
+  mock.store(on, { enabled: true, tgChatId: '42', listener: { sid: 'test-session', until: Date.now() + 60_000 } })
+  mock.env(on, { HOME })
+  fakeSession(on, CWD)
+  fakeFs(on, files)
+  fakeProcess(on, files)
+  fakeNet(on, fetches)
+  on('turn.complete', async (_$, e) => ({ text: e.answer }))
+  const end = { answer: 'OAuth token revoked · Please run /login', durationMs: 1, isAborted: false, turnId: 't1' }
+  await $.turn.complete({ ...end, reason: 'error' })
+  expect(fetches.some(f => f.url.includes('typesafe'))).toBe(false)
+  await $.turn.complete({ ...end, answer: 'Done with step one.', turnId: 't2', reason: 'answer' })
+  expect(fetches.some(f => f.url.includes('typesafe'))).toBe(true)
 })

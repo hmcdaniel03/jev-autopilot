@@ -89,8 +89,12 @@ in the `configure` commands below.
 
 5. **Turn it on** with `/autopilot on` (or `JEV_AUTOPILOT=1` in the environment).
    The switch is machine-wide: it applies to every Claude Code session on this
-   machine, in every project, until `/autopilot off`. The status line shows
-   `autopilot ●` while it is on.
+   machine, in every project, until `/autopilot off`. While it is on, the line under
+   the prompt shows `jev-autopilot: autopilot ●` (`autopilot ● firstmate` or
+   `autopilot ● worker (screening only)` in a Firstmate session); sessions that are
+   already open pick up a switch made elsewhere within a few seconds. Notices such as
+   a held call or a Telegram failure appear as `jev-autopilot: …` messages at the
+   bottom right.
 
 ## Commands
 
@@ -140,8 +144,11 @@ object to `claude plugin configure jev-autopilot@jev-autopilot --values-stdin`
 - **Tool calls**: read-only tools are never screened. For everything else Jev is
   asked whether the action is destructive or outward-facing (reaches other people,
   publishes, spends money). At or above `holdThreshold` the call is denied and sent
-  to your phone; **Proceed** lets exactly that call run once, in that session and
-  project, within `telegramWaitMinutes`. Cleanup inside `tempRoots` is never held.
+  to your phone; **Proceed** lets exactly that call past autopilot once, in that
+  session and project, within `telegramWaitMinutes`. Claude Code's own permission
+  mode still applies after that: in auto mode, for example, a force push you approved
+  can still be denied, and Claude will tell you so. **Block** tells Claude not to run
+  the call or work around it. Cleanup inside `tempRoots` is never held.
 - **Keep going**: when a turn ends, Jev checks whether work remains that does not
   depend on an open question, and nudges Claude at most three times.
 - **Log**: every decision is appended to `~/.claude/autopilot/decisions.jsonl`.
@@ -251,7 +258,8 @@ npx -y -p typescript@5 tsc --noEmit -p .   # after Claude Code has loaded the mo
 ```
 
 The type check needs `.claude-plugin/types/`, which Claude Code generates whenever it
-loads the mod (`claude --plugin-dir .`); it is git-ignored. `hooks/core.ts` and
+loads the mod; it is git-ignored. `claude --plugin-dir . -p '/autopilot status'`
+generates it without signing in, which is what CI does. `hooks/core.ts` and
 `hooks/trust.ts` hold the pure logic and are unit-tested; `hooks/register.ts` wires
 them to the engine and is covered by harness tests in `tests/register.test.ts`.
 
