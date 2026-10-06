@@ -187,8 +187,54 @@ export function pasteInstructions(os: Os, home: string, name: SecretName) {
 
 export const RERUN = 'Then run `/autopilot setup` again; it picks up where it left off.'
 
+// ---------------------------------------------------------------- how it works
+
+// What autopilot does, shown before setup offers to switch it on and by `/autopilot help`.
+// Short lines in plain words, readable in a narrow terminal or on a phone.
+export const HOW_IT_WORKS = [
+  B('How autopilot works'),
+  '• On (`/autopilot on`): for every Claude Code session on this machine. Jev screens risky actions and answers routine questions, so sessions keep going without you.',
+  '• Big or risky calls go to your phone on Telegram: tap Proceed or Block. Questions too big for Jev arrive there with its suggestion.',
+  '• Message the bot to steer: your text goes to Claude and its reply comes back to the chat. /status and /stop work from the phone.',
+  '• A session that stops while other work remains is nudged to keep going.',
+  '• Off (`/autopilot off`): normal Claude Code; everything asks you in the terminal.',
+  "• Claude Code's own permission mode still applies underneath, on or off.",
+  '• Day to day: turn it on when you leave, off when you are back.',
+] as const
+
+export const COMMANDS_LINE = 'Commands: `/autopilot on` · `off` · `status` · `log` · `test` · `pair` · `unpair` · `name <name>` · `setup` · `help`'
+
+const COMMANDS = [
+  ['on / off', 'switch autopilot for every session on this machine'],
+  ['status', 'state, secrets, pairing, log path'],
+  ['log', 'the last 15 decisions'],
+  ['test', 'send a test message to your phone and listen for a reply'],
+  ['pair / unpair', 'pair a private Telegram chat, or forget it'],
+  ['name <name>', 'what prompts and Telegram text call you'],
+  ['setup', 'guided setup; safe to re-run, resumes where it stopped'],
+  ['help', 'this text'],
+] as const
+
+// The setup's explainer: how it works and the key commands.
+export const howItWorks = () => [...HOW_IT_WORKS, COMMANDS_LINE].join('\n')
+
+// `/autopilot help`: the explainer and every command, in Claude Code and on the phone.
+export function helpText() {
+  return [
+    ...HOW_IT_WORKS,
+    '',
+    B('Commands'),
+    ...COMMANDS.map(([c, what]) => `• \`/autopilot ${c}\`: ${what}`),
+    '',
+    B('On your phone'), '• /status: what the session is doing · /stop: abort the current turn · reply to a prompt to answer it · any other text goes to Claude',
+  ].join('\n')
+}
+
+export const HELP_POINTER = '`/autopilot help` explains how autopilot works and lists the commands.'
+
 // The text for a step that stops the flow, or for `done`.
-export type Extra = { botUser?: string; pairCode?: string; tokenError?: string; jevStatus?: string }
+// `explained`: the explainer was already shown this run (before the switch-on dialog).
+export type Extra = { botUser?: string; pairCode?: string; tokenError?: string; jevStatus?: string; explained?: boolean }
 
 export function stepText(step: Step, w: SetupWorld, extra: Extra = {}): string {
   const path = displayPath(w.os, secretsFile(w.home))
@@ -219,9 +265,12 @@ export function stepText(step: Step, w: SetupWorld, extra: Extra = {}): string {
     case 'pair':
       return `Send ${B(extra.pairCode ?? '')} to ${extra.botUser ? `@${extra.botUser}` : 'your bot'} in a ${B('private')} Telegram chat within 10 minutes (three wrong guesses burn it). ${RERUN}`
     case 'enable':
-      return 'Everything is in place. Run `/autopilot on` to switch autopilot on for every session on this machine.'
+      return [
+        ...(extra.explained ? [] : [howItWorks(), '']),
+        'Everything is in place. Run `/autopilot on` to switch autopilot on for every session on this machine. `/autopilot help` shows how it works again.',
+      ].join('\n')
     case 'done':
-      return 'Autopilot is on. `/autopilot status` shows the state, `/autopilot log` the decisions, `/autopilot off` switches it off.'
+      return 'Autopilot is on. `/autopilot status` shows the state, `/autopilot log` the decisions, `/autopilot off` switches it off, `/autopilot help` explains it all.'
   }
 }
 

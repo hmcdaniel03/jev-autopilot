@@ -451,9 +451,17 @@ test('setup resumes after pairing: a rejected Jev key is reported, and the final
   fakeSetupProcess(on, files, [])
   fakeSetupNet(on, fetches, { token: true, jev: false })
   on('ui.status', async () => ({ value: undefined }))
+  const logged: string[] = []
+  on('ui.log', async (_$, e) => {
+    logged.push(e.text)
+    return { value: undefined }
+  })
   fakeDialog(on, { 'Owner name': 'Skip for now', Autopilot: 'Yes, turn it on' })
   version(on)
   const r = await autopilot($, 'setup')
+  // what autopilot does is shown before the dialog that switches it on
+  expect(logged.some(l => l.includes('How autopilot works') && l.includes('/autopilot off') && l.includes('permission mode'))).toBe(true)
+  expect(r.text).toContain('/autopilot help')
   expect(r.text).toContain('TYPESAFE_API_KEY: rejected by TypeSafe ✗ (HTTP 401)')
   expect(r.text).toContain('Telegram: paired ✓')
   expect(r.text).toContain('Autopilot is on')
@@ -481,6 +489,10 @@ test('setup with nobody to ask prints the name hint and the /autopilot on step i
   expect(r.text).toContain('/autopilot name')
   expect(r.text).toContain('TYPESAFE_API_KEY: present (not verified: HTTP 529)')
   expect(r.text).toContain('Run `/autopilot on`')
+  // nobody saw the dialog, so the explainer is in the output itself
+  expect(r.text).toContain('How autopilot works')
+  expect(r.text).toContain('Proceed or Block')
+  expect(r.text).toContain('/autopilot help')
   expect(writes.enabled).toBe(undefined)
   // the name can be set by hand; it is not a secret
   expect((await autopilot($, 'name Sam')).text).toContain('Owner name set to "Sam"')
@@ -508,4 +520,45 @@ test('setup on Windows writes the file, restricts it with icacls, and prints Pow
   expect(r.text).toContain('Read-Host')
   expect(r.text).toContain('-AsSecureString')
   expect(r.text).toContain('"$env:USERPROFILE\\.claude\\jev-autopilot\\secrets.env"')
+})
+
+// ---------------------------------------------------------------- /autopilot help
+
+test('help explains on and off and lists every command', async ($, on) => {
+  mock.store(on)
+  mock.env(on, { HOME })
+  fakeSession(on, CWD)
+  fakeFs(on, {})
+  fakeProcess(on, {})
+  const r = await autopilot($, 'help')
+  expect(r.text).toContain('How autopilot works')
+  expect(r.text).toContain('everything asks you in the terminal')
+  for (const c of ['on / off', 'status', 'log', 'test', 'pair / unpair', 'name <name>', 'setup', 'help']) expect(r.text).toContain(`\`/autopilot ${c}\``)
+  expect(r.text).toContain('/stop')
+  expect(r.text).not.toContain('Session role')
+})
+
+test('the first switch-on on a machine points to /autopilot help, later ones do not', async ($, on) => {
+  const writes = trackedStore(on)
+  mock.env(on, { HOME })
+  fakeSession(on, CWD)
+  fakeFs(on, {})
+  fakeProcess(on, {})
+  on('ui.status', async () => ({ value: undefined }))
+  const first = await autopilot($, 'on')
+  expect(first.text).toContain('Autopilot on for every session')
+  expect(first.text).toContain('/autopilot help')
+  expect(writes.everOn).toBe(true)
+  expect((await autopilot($, 'off')).text).not.toContain('/autopilot help')
+  expect((await autopilot($, 'on')).text).not.toContain('/autopilot help')
+})
+
+test('a machine that switched autopilot before this release gets no first-time pointer', async ($, on) => {
+  trackedStore(on, { enabled: false })
+  mock.env(on, { HOME })
+  fakeSession(on, CWD)
+  fakeFs(on, {})
+  fakeProcess(on, {})
+  on('ui.status', async () => ({ value: undefined }))
+  expect((await autopilot($, 'on')).text).not.toContain('/autopilot help')
 })

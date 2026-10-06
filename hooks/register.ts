@@ -14,7 +14,7 @@ import {
 } from './trust'
 import type { FmProbe, PairCode } from './trust'
 import {
-  createFileCommand, JEV_MODELS_URL, nextStep, SECRETS_TEMPLATE, secretsFile, stepText, summaryLines, windowsRestrict,
+  createFileCommand, HELP_POINTER, helpText, howItWorks, JEV_MODELS_URL, nextStep, SECRETS_TEMPLATE, secretsFile, stepText, summaryLines, windowsRestrict,
 } from './setup'
 import type { Extra, Os, SetupWorld } from './setup'
 
@@ -812,11 +812,16 @@ async function setOwnerName($: $, name: string) {
   }
 }
 
+// Switches autopilot; true when this is the first time it was switched on on this machine.
 async function switchAutopilot($: $, on: boolean) {
+  // A machine that switched it before this key existed has `enabled` stored already.
+  const first = on && (await $.store.get('everOn')) !== true && (await $.store.get('enabled')) === undefined
+  if (on) await $.store.set('everOn', true)
   await $.store.set('enabled', on)
   await stateChange($) // this session reads it in the command's output
   await showStatus($)
   if (on && (await tgChat($))) await say($, `🟢 Autopilot on for every session on this machine (switched on from <b>${esc(await project($))}</b>).`)
+  return first
 }
 
 // The guided first-time flow. Every run starts from the world as it is, so it resumes
@@ -881,8 +886,10 @@ async function runSetup($: $): Promise<string> {
     return finish(w, stepText(step, w, { ...extra, pairCode: showPairCode(code) }))
   }
   if (step.kind === 'enable') {
+    // Say what it does before asking to switch it on: the dialog covers the command output.
+    $.ui.log(howItWorks())
     const a = await ask($, 'Turn autopilot on now, for every Claude Code session on this machine?', ['Yes, turn it on', 'Not yet'], 'Autopilot')
-    if (a !== 'Yes, turn it on') return finish(w, stepText(step, w))
+    if (a !== 'Yes, turn it on') return finish(w, stepText(step, w, { explained: a !== undefined }))
     await switchAutopilot($, true)
     w = { ...w, enabled: true }
     step = nextStep(w)
@@ -907,7 +914,7 @@ export const register: Register = (on, options) => {
   // ------------------------------------------------------------ session & commands
 
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'autopilot', description: 'Jev autopilot: setup | on | off | status | pair | unpair | test | log | name <you>' })
+    await $.command.register({ name: 'autopilot', description: 'Jev autopilot: setup | help | on | off | status | pair | unpair | test | log | name <you>' })
     $.clock.every(3000, () => void tick($))
     await showStatus($)
     return next(e)
@@ -958,6 +965,9 @@ export const register: Register = (on, options) => {
     if (sub === 'setup') {
       return { text: await runSetup($) }
     }
+    if (sub === 'help') {
+      return { text: helpText() }
+    }
     if (sub === 'name') {
       const name = e.args.trim().replace(/^name\s*/, '').trim().slice(0, 40)
       if (!name) return { text: `Owner name: ${owner()}. Usage: /autopilot name <your first name> (a name is not a secret; never put a token here).` }
@@ -965,8 +975,8 @@ export const register: Register = (on, options) => {
       return { text: deny ? `Using "${name}" for this session; saving it failed (${deny}). Run /plugin configure to set ownerName.` : `Owner name set to "${name}".` }
     }
     if (sub === 'on' || sub === 'off') {
-      await switchAutopilot($, sub === 'on')
-      return { text: `Autopilot ${sub} for every session on this machine.${sub === 'on' && !hasJev ? ' Warning: TYPESAFE_API_KEY is not set, so nothing will be screened.' : ''}` }
+      const first = await switchAutopilot($, sub === 'on')
+      return { text: `Autopilot ${sub} for every session on this machine.${sub === 'on' && !hasJev ? ' Warning: TYPESAFE_API_KEY is not set, so nothing will be screened.' : ''}${first ? `\n${HELP_POINTER}` : ''}` }
     }
     if (sub === 'pair') {
       if (!hasTg) return { text: `Set TELEGRAM_BOT_TOKEN first (create a bot with @BotFather; put the token in ${SECRETS_FILE}).` }

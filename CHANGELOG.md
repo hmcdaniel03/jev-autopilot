@@ -17,8 +17,15 @@ All notable changes to jev-autopilot are recorded here. The format follows
   the pairing code, and offers to switch autopilot on. Re-running it resumes where
   it stopped. Paths and commands are spelled for macOS/Linux and for Windows.
 - `/autopilot name <name>` sets `ownerName` without leaving Claude Code.
-- README: a Quick start (two install commands and `/autopilot setup`), with the
-  manual steps kept for reference and Windows variants wherever paths appear.
+- `/autopilot help`: how autopilot works (what on and off do, phone approvals,
+  steering from Telegram, keep-going nudges, Claude Code's permission mode
+  underneath, the daily routine) and every command. `/autopilot setup` shows the
+  same explainer before it offers to switch autopilot on, and the first
+  `/autopilot on` on a machine points to it.
+- README: a Quick start (two install commands, `/autopilot setup` and
+  `/autopilot help`) is the way in; the manual install and setup steps are gone,
+  leaving a short Advanced and troubleshooting section (clone install, where the
+  secrets file lives, re-running setup).
 
 ### Fixed
 

@@ -2,7 +2,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import {
-  createFileCommand, displayPath, fixModeCommand, keyFormatOk, MIN_VERSION, nextStep, pasteCommand, pasteInstructions, pluginDirsExample,
+  createFileCommand, displayPath, fixModeCommand, helpText, HOW_IT_WORKS, howItWorks, keyFormatOk, MIN_VERSION, nextStep, pasteCommand, pasteInstructions, pluginDirsExample,
   SECRETS_TEMPLATE, secretsFile, stepText, summaryLines, tokenFormatOk, versionLine, versionOk, windowsRestrict,
 } from '../hooks/setup'
 import type { SetupWorld } from '../hooks/setup'
@@ -159,4 +159,35 @@ test('the summary reports each prerequisite without printing a secret', () => {
   const missing = summaryLines(withFile({ TELEGRAM_BOT_TOKEN: TOKEN })).join('\n')
   expect(missing).toContain('TYPESAFE_API_KEY: missing (optional')
   expect(summaryLines(world({ os: 'windows', home: 'C:/Users/sam', file: { exists: true, values: {} } })).join('\n')).toContain('permissions not checked on Windows')
+})
+
+// ---------------------------------------------------------------- how it works
+
+test('the explainer says what on and off do, in short lines, without naming the owner', () => {
+  const text = howItWorks()
+  expect(HOW_IT_WORKS.length + 1).toBeLessThanOrEqual(12)
+  for (const want of ['every Claude Code session on this machine', 'Proceed or Block', 'reply comes back', 'keep going', 'everything asks you in the terminal', 'permission mode', 'on when you leave', '/status and /stop'])
+    expect(text).toContain(want)
+  for (const c of ['/autopilot on', 'off', 'status', 'log', 'test', 'pair', 'unpair', 'name <name>', 'setup', 'help']) expect(text).toContain(`\`${c}\``)
+  expect(text).not.toContain('the owner')
+  expect(text).not.toContain('Hunter')
+})
+
+test('help is the explainer plus the full command list', () => {
+  const text = helpText()
+  for (const line of HOW_IT_WORKS) expect(text).toContain(line)
+  expect(text).toContain('`/autopilot pair / unpair`')
+  expect(text).toContain('/stop')
+})
+
+test('the last setup steps point to /autopilot help; the switch-on step explains autopilot unless the dialog already did', () => {
+  const w = withFile({ TELEGRAM_BOT_TOKEN: TOKEN }, '600', { paired: true })
+  const enable = stepText({ kind: 'enable' }, w)
+  expect(enable).toContain('How autopilot works')
+  expect(enable).toContain('/autopilot help')
+  expect(enable).toContain('Run `/autopilot on`')
+  const shown = stepText({ kind: 'enable' }, w, { explained: true })
+  expect(shown).not.toContain('How autopilot works')
+  expect(shown).toContain('/autopilot help')
+  expect(stepText({ kind: 'done' }, { ...w, enabled: true })).toContain('/autopilot help')
 })
